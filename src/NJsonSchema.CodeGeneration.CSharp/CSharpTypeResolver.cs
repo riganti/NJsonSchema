@@ -6,25 +6,19 @@
 // <author>Rico Suter, mail@rsuter.com</author>
 //-----------------------------------------------------------------------
 
-using System;
 using System.Linq;
-using NJsonSchema.CodeGeneration.CSharp.Templates;
 
 namespace NJsonSchema.CodeGeneration.CSharp
 {
     /// <summary>Manages the generated types and converts JSON types to CSharp types. </summary>
-    public class CSharpTypeResolver : TypeResolverBase<CSharpGenerator>
+    public class CSharpTypeResolver : TypeResolverBase
     {
-        private readonly object _rootObject;
-
         /// <summary>Initializes a new instance of the <see cref="CSharpTypeResolver"/> class.</summary>
         /// <param name="settings">The generator settings.</param>
-        /// <param name="rootObject">The root object to search for JSON Schemas.</param>
-        public CSharpTypeResolver(CSharpGeneratorSettings settings, object rootObject)
+        public CSharpTypeResolver(CSharpGeneratorSettings settings)
             : base(settings)
         {
-            _rootObject = rootObject;
-            Settings = settings;            
+            Settings = settings;
         }
 
         /// <summary>Gets the generator settings.</summary>
@@ -51,7 +45,7 @@ namespace NJsonSchema.CodeGeneration.CSharp
             }
 
             if (type.HasFlag(JsonObjectType.Array))
-                return ResolveArray(schema);
+                return ResolveArrayOrTuple(schema);
 
             if (type.HasFlag(JsonObjectType.Number))
                 return ResolveNumber(schema, isNullable);
@@ -69,47 +63,9 @@ namespace NJsonSchema.CodeGeneration.CSharp
                 return "byte[]";
 
             if (schema.IsDictionary)
-            {
-                var valueType = ResolveDictionaryValueType(schema, "object", Settings.NullHandling);
-                return string.Format(Settings.DictionaryType + "<string, {0}>", valueType);
-            }
+                return ResolveDictionary(schema);
 
-            return AddGenerator(schema, typeNameHint);
-        }
-
-        /// <summary>Generates all necessary classes.</summary>
-        /// <returns>The code.</returns>
-        public string GenerateClasses()
-        {
-            var classes = GenerateTypes(null);
-            if (classes.Contains("JsonInheritanceConverter"))
-                classes += "\n\n" + new JsonInheritanceConverterTemplate().TransformText();
-            return classes;
-        }
-
-        /// <summary>Adds a generator for the given schema if necessary.</summary>
-        /// <param name="schema">The schema.</param>
-        /// <param name="typeNameHint">The type name hint.</param>
-        /// <returns>The type name of the created generator.</returns>
-        protected override string AddGenerator(JsonSchema4 schema, string typeNameHint)
-        {
-            if (schema.IsEnumeration && schema.Type == JsonObjectType.Integer)
-            {
-                // Regenerate generator because it is be better than the current one (defined enum values)
-                var typeName = GetOrGenerateTypeName(schema, typeNameHint);
-                var generator = CreateTypeGenerator(schema);
-                AddOrReplaceTypeGenerator(typeName, generator);
-            }
-
-            return base.AddGenerator(schema, typeNameHint);
-        }
-
-        /// <summary>Creates a type generator.</summary>
-        /// <param name="schema">The schema.</param>
-        /// <returns>The generator.</returns>
-        protected override CSharpGenerator CreateTypeGenerator(JsonSchema4 schema)
-        {
-            return new CSharpGenerator(schema, Settings, this, _rootObject);
+            return GetOrGenerateTypeName(schema, typeNameHint);
         }
 
         private string ResolveString(JsonSchema4 schema, bool isNullable, string typeNameHint)
@@ -137,7 +93,7 @@ namespace NJsonSchema.CodeGeneration.CSharp
 #pragma warning restore 618
 
             if (schema.IsEnumeration)
-                return AddGenerator(schema, typeNameHint) + (isNullable ? "?" : string.Empty);
+                return GetOrGenerateTypeName(schema, typeNameHint) + (isNullable ? "?" : string.Empty);
 
             return "string";
         }
@@ -150,7 +106,7 @@ namespace NJsonSchema.CodeGeneration.CSharp
         private string ResolveInteger(JsonSchema4 schema, bool isNullable, string typeNameHint)
         {
             if (schema.IsEnumeration)
-                return AddGenerator(schema, typeNameHint) + (isNullable ? "?" : string.Empty);
+                return GetOrGenerateTypeName(schema, typeNameHint) + (isNullable ? "?" : string.Empty);
 
             if (schema.Format == JsonFormatStrings.Byte)
                 return isNullable ? "byte?" : "byte";
@@ -169,16 +125,21 @@ namespace NJsonSchema.CodeGeneration.CSharp
             return isNullable ? "double?" : "double";
         }
 
-        private string ResolveArray(JsonSchema4 schema)
+        private string ResolveArrayOrTuple(JsonSchema4 schema)
         {
-            var property = schema;
-            if (property.Item != null)
-                return string.Format(Settings.ArrayType + "<{0}>", Resolve(property.Item, false, null));
+            if (schema.Item != null)
+                return string.Format(Settings.ArrayType + "<{0}>", Resolve(schema.Item, false, null));
 
-            if (property.Items != null && property.Items.Count > 0)
-                return string.Format("System.Tuple<" + string.Join(", ", property.Items.Select(i => Resolve(i.ActualSchema, false, null)) + ">"));
+            if (schema.Items != null && schema.Items.Count > 0)
+                return string.Format("System.Tuple<" + string.Join(", ", schema.Items.Select(i => Resolve(i.ActualSchema, false, null)) + ">"));
 
             return Settings.ArrayType + "<object>";
+        }
+
+        private string ResolveDictionary(JsonSchema4 schema)
+        {
+            var valueType = ResolveDictionaryValueType(schema, "object", Settings.SchemaType);
+            return string.Format(Settings.DictionaryType + "<string, {0}>", valueType);
         }
     }
 }

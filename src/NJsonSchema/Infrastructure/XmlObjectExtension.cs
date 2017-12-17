@@ -50,7 +50,7 @@ namespace NJsonSchema.Infrastructure
             string xmlNamespace = null;
             bool xmlWrapped = false;
 
-            if (propertySchema.Type == JsonObjectType.Array)
+            if (propertySchema.IsArray)
             {
                 dynamic xmlArrayAttribute = attributes.TryGetIfAssignableTo("System.Xml.Serialization.XmlArrayAttribute");
                 if (xmlArrayAttribute != null)

@@ -6,6 +6,8 @@
 // <author>Rico Suter, mail@rsuter.com</author>
 //-----------------------------------------------------------------------
 
+using System.Reflection;
+
 namespace NJsonSchema.CodeGeneration.CSharp
 {
     /// <summary>The generator settings.</summary>
@@ -22,12 +24,19 @@ namespace NJsonSchema.CodeGeneration.CSharp
             ArrayType = "System.Collections.ObjectModel.ObservableCollection";
             DictionaryType = "System.Collections.Generic.Dictionary";
 
+            ArrayBaseType = "System.Collections.ObjectModel.ObservableCollection";
+            DictionaryBaseType = "System.Collections.Generic.Dictionary";
+
             RequiredPropertiesMustBeDefined = true;
             GenerateDataAnnotations = true;
             ClassStyle = CSharpClassStyle.Inpc;
+            TypeAccessModifier = "public";
 
             PropertyNameGenerator = new CSharpPropertyNameGenerator();
-            TemplateFactory = new DefaultTemplateFactory();
+            TemplateFactory = new DefaultTemplateFactory(this, new Assembly[]
+            {
+                typeof(CSharpGeneratorSettings).GetTypeInfo().Assembly
+            });
         }
 
         /// <summary>Gets or sets the .NET namespace of the generated types.</summary>
@@ -57,9 +66,18 @@ namespace NJsonSchema.CodeGeneration.CSharp
 
         /// <summary>Gets or sets the generic dictionary .NET type (default: 'Dictionary').</summary>
         public string DictionaryType { get; set; }
+       
+        /// <summary>Gets or sets the generic array .NET type which is used as base class (default: 'ObservableCollection').</summary>
+        public string ArrayBaseType { get; set; }
+
+        /// <summary>Gets or sets the generic dictionary .NET type which is used as base class (default: 'Dictionary').</summary>
+        public string DictionaryBaseType { get; set; }
 
         /// <summary>Gets or sets the CSharp class style (default: 'Poco').</summary>
         public CSharpClassStyle ClassStyle { get; set; }
+
+        /// <summary>Gets or sets the access modifier of generated classes and interfaces (default: 'public').</summary>
+        public string TypeAccessModifier { get; set; }
 
         /// <summary>Gets or sets the custom Json.NET converters (class names) which are registered for serialization and deserialization.</summary>
         public string[] JsonConverters { get; set; }
@@ -72,5 +90,8 @@ namespace NJsonSchema.CodeGeneration.CSharp
 
         /// <summary>Gets or sets a value indicating whether to use preserve references handling (All) in the JSON serializer (default: false).</summary>
         public bool HandleReferences { get; set; }
+
+        /// <summary>Gets or sets the name of a static method which is called to transform the JsonSerializerSettings used in the generated ToJson()/FromJson() methods (default: null).</summary>
+        public string JsonSerializerSettingsTransformationMethod { get; set; }
     }
 }

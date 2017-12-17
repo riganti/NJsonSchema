@@ -11,27 +11,34 @@ using System.Linq;
 
 namespace NJsonSchema.CodeGeneration.TypeScript
 {
-    /// <summary>Manages the generated types and converts JSON types to CSharp types. </summary>
-    public class TypeScriptTypeResolver : TypeResolverBase<TypeScriptGenerator>
+    /// <summary>Manages the generated types and converts JSON types to TypeScript types. </summary>
+    public class TypeScriptTypeResolver : TypeResolverBase
     {
-        private readonly object _rootObject;
-
         /// <summary>Initializes a new instance of the <see cref="TypeScriptTypeResolver" /> class.</summary>
         /// <param name="settings">The settings.</param>
-        /// <param name="rootObject">The root object to search for JSON Schemas.</param>
-        public TypeScriptTypeResolver(TypeScriptGeneratorSettings settings, object rootObject)
+        public TypeScriptTypeResolver(TypeScriptGeneratorSettings settings)
             : base(settings)
         {
-            _rootObject = rootObject;
             Settings = settings;
         }
 
         /// <summary>Gets the generator settings.</summary>
-        public TypeScriptGeneratorSettings Settings { get; private set; }
+        public TypeScriptGeneratorSettings Settings { get; }
 
         /// <summary>Gets or sets the namespace of the generated classes.</summary>
         public string Namespace { get; set; }
-        
+
+        /// <summary>Resolves and possibly generates the specified schema. Returns the type name with a 'I' prefix if the feature is supported for the given schema.</summary>
+        /// <param name="schema">The schema.</param>
+        /// <param name="isNullable">Specifies whether the given type usage is nullable.</param>
+        /// <param name="typeNameHint">The type name hint to use when generating the type and the type name is missing.</param>
+        /// <returns>The type name.</returns>
+        /// <exception cref="ArgumentNullException"><paramref name="schema"/> is <see langword="null" />.</exception>
+        public string ResolveConstructorInterfaceName(JsonSchema4 schema, bool isNullable, string typeNameHint)
+        {
+            return Resolve(schema, typeNameHint, true);
+        }
+
         /// <summary>Resolves and possibly generates the specified schema.</summary>
         /// <param name="schema">The schema.</param>
         /// <param name="isNullable">Specifies whether the given type usage is nullable.</param>
@@ -39,6 +46,11 @@ namespace NJsonSchema.CodeGeneration.TypeScript
         /// <returns>The type name.</returns>
         /// <exception cref="ArgumentNullException"><paramref name="schema"/> is <see langword="null" />.</exception>
         public override string Resolve(JsonSchema4 schema, bool isNullable, string typeNameHint)
+        {
+            return Resolve(schema, typeNameHint, false);
+        }
+
+        private string Resolve(JsonSchema4 schema, string typeNameHint, bool addInterfacePrefix)
         {
             if (schema == null)
                 throw new ArgumentNullException(nameof(schema));
@@ -51,13 +63,13 @@ namespace NJsonSchema.CodeGeneration.TypeScript
             var type = schema.Type;
             if (type == JsonObjectType.None && schema.IsEnumeration)
             {
-                type = schema.Enumeration.All(v => v is int) ? 
+                type = schema.Enumeration.All(v => v is int) ?
                     JsonObjectType.Integer :
                     JsonObjectType.String;
             }
 
             if (type.HasFlag(JsonObjectType.Array))
-                return ResolveArray(schema, typeNameHint);
+                return ResolveArrayOrTuple(schema, typeNameHint, addInterfacePrefix);
 
             if (type.HasFlag(JsonObjectType.Number))
                 return "number";
@@ -76,19 +88,12 @@ namespace NJsonSchema.CodeGeneration.TypeScript
 
             if (schema.IsDictionary)
             {
-                var valueType = ResolveDictionaryValueType(schema, "any", Settings.NullHandling);
+                var prefix = addInterfacePrefix && schema.AdditionalPropertiesSchema?.ActualSchema.Type.HasFlag(JsonObjectType.Object) == true ? "I" : "";
+                var valueType = prefix + ResolveDictionaryValueType(schema, "any", Settings.SchemaType);
                 return $"{{ [key: string] : {valueType}; }}";
             }
 
-            return AddGenerator(schema, typeNameHint);
-        }
-
-        /// <summary>Creates a type generator.</summary>
-        /// <param name="schema">The schema.</param>
-        /// <returns>The generator.</returns>
-        protected override TypeScriptGenerator CreateTypeGenerator(JsonSchema4 schema)
-        {
-            return new TypeScriptGenerator(schema, Settings, this, _rootObject);
+            return (addInterfacePrefix ? "I" : "") + GetOrGenerateTypeName(schema, typeNameHint);
         }
 
         private string ResolveString(JsonSchema4 schema, string typeNameHint)
@@ -124,7 +129,7 @@ namespace NJsonSchema.CodeGeneration.TypeScript
             }
 
             if (schema.IsEnumeration)
-                return AddGenerator(schema, typeNameHint);
+                return GetOrGenerateTypeName(schema, typeNameHint);
 
             return "string";
         }
@@ -132,15 +137,20 @@ namespace NJsonSchema.CodeGeneration.TypeScript
         private string ResolveInteger(JsonSchema4 schema, string typeNameHint)
         {
             if (schema.IsEnumeration)
-                return AddGenerator(schema, typeNameHint);
+                return GetOrGenerateTypeName(schema, typeNameHint);
 
             return "number";
         }
 
-        private string ResolveArray(JsonSchema4 schema, string typeNameHint)
+        private string ResolveArrayOrTuple(JsonSchema4 schema, string typeNameHint, bool addInterfacePrefix)
         {
             if (schema.Item != null)
-                return string.Format("{0}[]", Resolve(schema.Item, true, typeNameHint)); // TODO: Make typeNameHint singular if possible
+            {
+                var isObject = schema.Item?.ActualSchema.Type.HasFlag(JsonObjectType.Object) == true;
+                var isDictionary = schema.Item?.ActualSchema.IsDictionary == true;
+                var prefix = addInterfacePrefix && isObject && !isDictionary ? "I" : "";
+                return string.Format("{0}[]", prefix + Resolve(schema.Item, true, typeNameHint)); // TODO: Make typeNameHint singular if possible
+            }
 
             if (schema.Items != null && schema.Items.Count > 0)
                 return string.Format("[" + string.Join(", ", schema.Items.Select(i => Resolve(i.ActualSchema, false, null))) + "]");

@@ -24,7 +24,7 @@ namespace NJsonSchema.CodeGeneration.CSharp.Models
         /// <param name="resolver">The resolver.</param>
         /// <param name="settings">The settings.</param>
         public PropertyModel(ClassTemplateModel classTemplateModel, JsonProperty property, CSharpTypeResolver resolver, CSharpGeneratorSettings settings)
-            : base(property, classTemplateModel, new CSharpDefaultValueGenerator(resolver, settings), settings)
+            : base(property, classTemplateModel, new CSharpValueGenerator(resolver, settings), settings)
         {
             _property = property;
             _settings = settings;
@@ -35,7 +35,7 @@ namespace NJsonSchema.CodeGeneration.CSharp.Models
         public string Name => _property.Name;
 
         /// <summary>Gets the type of the property.</summary>
-        public override string Type => _resolver.Resolve(_property.ActualPropertySchema, _property.IsNullable(_settings.NullHandling), GetTypeNameHint());
+        public override string Type => _resolver.Resolve(_property.ActualTypeSchema, _property.IsNullable(_settings.SchemaType), GetTypeNameHint());
 
         /// <summary>Gets a value indicating whether the property has a description.</summary>
         public bool HasDescription => !string.IsNullOrEmpty(_property.Description);
@@ -48,26 +48,26 @@ namespace NJsonSchema.CodeGeneration.CSharp.Models
 
         /// <summary>Gets a value indicating whether this is an array property which cannot be null.</summary>
         public bool HasSetter => 
-            (_property.IsNullable(_settings.NullHandling) == false && (
-                (_property.ActualPropertySchema.Type.HasFlag(JsonObjectType.Array) && _settings.GenerateImmutableArrayProperties) ||
-                (_property.ActualPropertySchema.IsDictionary && _settings.GenerateImmutableDictionaryProperties)
+            (_property.IsNullable(_settings.SchemaType) == false && (
+                (_property.ActualTypeSchema.IsArray && _settings.GenerateImmutableArrayProperties) ||
+                (_property.ActualTypeSchema.IsDictionary && _settings.GenerateImmutableDictionaryProperties)
             )) == false;
 
         /// <summary>Gets the json property required.</summary>
-        public string JsonPropertyRequired
+        public string JsonPropertyRequiredCode
         {
             get
             {
                 if (_settings.RequiredPropertiesMustBeDefined && _property.IsRequired)
                 {
-                    if (!_property.IsNullable(_settings.NullHandling))
+                    if (!_property.IsNullable(_settings.SchemaType))
                         return "Newtonsoft.Json.Required.Always";
                     else
                         return "Newtonsoft.Json.Required.AllowNull";
                 }
                 else
                 {
-                    if (!_property.IsNullable(_settings.NullHandling))
+                    if (!_property.IsNullable(_settings.SchemaType))
                         return "Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore";
                     else
                         return "Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore";
@@ -80,13 +80,13 @@ namespace NJsonSchema.CodeGeneration.CSharp.Models
         {
             get
             {
-                if (!_settings.GenerateDataAnnotations || !_property.IsRequired || _property.IsNullable(_settings.NullHandling))
+                if (!_settings.GenerateDataAnnotations || !_property.IsRequired || _property.IsNullable(_settings.SchemaType))
                     return false;
 
-                return _property.ActualPropertySchema.IsAnyType ||
-                       _property.ActualPropertySchema.Type.HasFlag(JsonObjectType.Object) ||
-                       _property.ActualPropertySchema.Type.HasFlag(JsonObjectType.String) ||
-                       _property.ActualPropertySchema.Type.HasFlag(JsonObjectType.Array);
+                return _property.ActualTypeSchema.IsAnyType ||
+                       _property.ActualTypeSchema.Type.HasFlag(JsonObjectType.Object) ||
+                       _property.ActualTypeSchema.Type.HasFlag(JsonObjectType.String) ||
+                       _property.ActualTypeSchema.Type.HasFlag(JsonObjectType.Array);
             }
         }
 
@@ -98,7 +98,7 @@ namespace NJsonSchema.CodeGeneration.CSharp.Models
                 if (!_settings.GenerateDataAnnotations)
                     return false;
 
-                if (!_property.ActualPropertySchema.Type.HasFlag(JsonObjectType.Number) && !_property.ActualPropertySchema.Type.HasFlag(JsonObjectType.Integer))
+                if (!_property.ActualTypeSchema.Type.HasFlag(JsonObjectType.Number) && !_property.ActualTypeSchema.Type.HasFlag(JsonObjectType.Integer))
                     return false;
 
                 return _property.Maximum.HasValue || _property.Minimum.HasValue;
@@ -106,10 +106,44 @@ namespace NJsonSchema.CodeGeneration.CSharp.Models
         }
 
         /// <summary>Gets the minimum value of the range attribute.</summary>
-        public string RangeMinimumValue => _property.Minimum.HasValue ? _property.Minimum.Value.ToString(CultureInfo.InvariantCulture) : $"double.{nameof(double.MinValue)}";
+        public string RangeMinimumValue
+        {
+            get
+            {
+                var format =
+                    _property.Format == JsonFormatStrings.Double ||
+                    _property.Format == JsonFormatStrings.Decimal ?
+                        JsonFormatStrings.Double : JsonFormatStrings.Integer;
+                var type =
+                    _property.Format == JsonFormatStrings.Double ||
+                    _property.Format == JsonFormatStrings.Decimal ?
+                        "double" : "int";
+
+                return _property.Minimum.HasValue
+                    ? ValueGenerator.GetNumericValue(_property.Minimum.Value, format)
+                    : type + "." + nameof(double.MinValue);
+            }
+        }
 
         /// <summary>Gets the maximum value of the range attribute.</summary>
-        public string RangeMaximumValue => _property.Maximum.HasValue ? _property.Maximum.Value.ToString(CultureInfo.InvariantCulture) : $"double.{nameof(double.MaxValue)}";
+        public string RangeMaximumValue
+        {
+            get
+            {
+                var format =
+                    _property.Format == JsonFormatStrings.Double ||
+                    _property.Format == JsonFormatStrings.Decimal ?
+                        JsonFormatStrings.Double : JsonFormatStrings.Integer;
+                var type =
+                    _property.Format == JsonFormatStrings.Double ||
+                    _property.Format == JsonFormatStrings.Decimal ?
+                        "double" : "int";
+
+                return _property.Maximum.HasValue
+                    ? ValueGenerator.GetNumericValue(_property.Maximum.Value, format)
+                    : type + "." + nameof(double.MaxValue);
+            }
+        }
 
         /// <summary>Gets a value indicating whether to render a string length attribute.</summary>
         public bool RenderStringLengthAttribute
@@ -119,7 +153,7 @@ namespace NJsonSchema.CodeGeneration.CSharp.Models
                 if (!_settings.GenerateDataAnnotations)
                     return false;
 
-                return _property.ActualPropertySchema.Type.HasFlag(JsonObjectType.String) &&
+                return _property.ActualTypeSchema.Type.HasFlag(JsonObjectType.String) &&
                        (_property.MinLength.HasValue || _property.MaxLength.HasValue);
             }
         }
@@ -138,15 +172,18 @@ namespace NJsonSchema.CodeGeneration.CSharp.Models
                 if (!_settings.GenerateDataAnnotations)
                     return false;
 
-                return _property.ActualPropertySchema.Type.HasFlag(JsonObjectType.String) &&
+                return _property.ActualTypeSchema.Type.HasFlag(JsonObjectType.String) &&
                        !string.IsNullOrEmpty(_property.Pattern);
             }
         }
 
         /// <summary>Gets the regular expression value for the regular expression attribute.</summary>
-        public string RegularExpressionValue => _property.Pattern.Replace("\"", "\"\"");
+        public string RegularExpressionValue => _property.Pattern?.Replace("\"", "\"\"");
 
         /// <summary>Gets a value indicating whether the property type is string enum.</summary>
-        public bool IsStringEnum => _property.ActualPropertySchema.IsEnumeration && _property.ActualPropertySchema.Type == JsonObjectType.String;
+        public bool IsStringEnum => _property.ActualTypeSchema.IsEnumeration && _property.ActualTypeSchema.Type == JsonObjectType.String;
+
+        /// <summary>Gets a value indicating whether the property should be formatted like a date.</summary>
+        public bool IsDate => _property.Format == JsonFormatStrings.Date;
     }
 }

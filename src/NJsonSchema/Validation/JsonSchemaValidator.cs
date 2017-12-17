@@ -8,6 +8,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Text.RegularExpressions;
 using Newtonsoft.Json.Linq;
@@ -150,7 +151,10 @@ namespace NJsonSchema.Validation
 
         private void ValidateEnum(JToken token, JsonSchema4 schema, string propertyName, string propertyPath, List<ValidationError> errors)
         {
-            if (schema.Enumeration.Count > 0 && schema.Enumeration.All(v => v.ToString() != token.ToString()))
+            if (schema.Enumeration.Contains(null) && token?.Type == JTokenType.Null)
+                return;
+
+            if (schema.Enumeration.Count > 0 && schema.Enumeration.All(v => v?.ToString() != token?.ToString()))
                 errors.Add(new ValidationError(ValidationErrorKind.NotInEnumeration, propertyName, propertyPath, token, schema));
         }
 
@@ -170,7 +174,6 @@ namespace NJsonSchema.Validation
                         if (!Regex.IsMatch(value, schema.Pattern))
                             errors.Add(new ValidationError(ValidationErrorKind.PatternMismatch, propertyName, propertyPath, token, schema));
                     }
-
                     if (schema.MinLength.HasValue && value.Length < schema.MinLength)
                         errors.Add(new ValidationError(ValidationErrorKind.StringTooShort, propertyName, propertyPath, token, schema));
 
@@ -186,6 +189,27 @@ namespace NJsonSchema.Validation
                                 errors.Add(new ValidationError(ValidationErrorKind.DateTimeExpected, propertyName, propertyPath, token, schema));
                         }
 
+                        if (schema.Format == JsonFormatStrings.Date)
+                        {
+                            DateTime dateTimeResult;
+                            if (token.Type != JTokenType.Date && (DateTime.TryParseExact(value, "yyyy-MM-dd", null, DateTimeStyles.None, out dateTimeResult) == false || dateTimeResult.Date != dateTimeResult))
+                                errors.Add(new ValidationError(ValidationErrorKind.DateExpected, propertyName, propertyPath, token, schema));
+                        }
+
+                        if (schema.Format == JsonFormatStrings.Time)
+                        {
+                            DateTime dateTimeResult;
+                            if (token.Type != JTokenType.Date && DateTime.TryParseExact(value, "HH:mm:ss.FFFFFFFK", null, DateTimeStyles.None, out dateTimeResult) == false)
+                                errors.Add(new ValidationError(ValidationErrorKind.TimeExpected, propertyName, propertyPath, token, schema));
+                        }
+
+                        if (schema.Format == JsonFormatStrings.TimeSpan)
+                        {
+                            TimeSpan timeSpanResult;
+                            if (token.Type != JTokenType.TimeSpan && TimeSpan.TryParse(value, out timeSpanResult) == false)
+                                errors.Add(new ValidationError(ValidationErrorKind.TimeSpanExpected, propertyName, propertyPath, token, schema));
+                        }
+
                         if (schema.Format == JsonFormatStrings.Uri)
                         {
                             Uri uriResult;
@@ -198,6 +222,7 @@ namespace NJsonSchema.Validation
                             var isEmail = Regex.IsMatch(value,
                                 @"^\A(?:[a-z0-9!#$%&'*+/=?^_`{|}~-]+(?:\.[a-z0-9!#$%&'*+/=?^_`{|}~-]+)*" +
                                 @"@(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)\Z$", RegexOptions.IgnoreCase);
+
                             if (!isEmail)
                                 errors.Add(new ValidationError(ValidationErrorKind.EmailExpected, propertyName, propertyPath, token, schema));
                         }
@@ -263,16 +288,32 @@ namespace NJsonSchema.Validation
 
             if (token.Type == JTokenType.Float || token.Type == JTokenType.Integer)
             {
-                var value = token.Value<decimal>();
+                try
+                {
+                    var value = token.Value<decimal>();
 
-                if (schema.Minimum.HasValue && (schema.IsExclusiveMinimum ? value <= schema.Minimum : value < schema.Minimum))
-                    errors.Add(new ValidationError(ValidationErrorKind.NumberTooSmall, propertyName, propertyPath, token, schema));
+                    if (schema.Minimum.HasValue && (schema.IsExclusiveMinimum ? value <= schema.Minimum : value < schema.Minimum))
+                        errors.Add(new ValidationError(ValidationErrorKind.NumberTooSmall, propertyName, propertyPath, token, schema));
 
-                if (schema.Maximum.HasValue && (schema.IsExclusiveMaximum ? value >= schema.Maximum : value > schema.Maximum))
-                    errors.Add(new ValidationError(ValidationErrorKind.NumberTooBig, propertyName, propertyPath, token, schema));
+                    if (schema.Maximum.HasValue && (schema.IsExclusiveMaximum ? value >= schema.Maximum : value > schema.Maximum))
+                        errors.Add(new ValidationError(ValidationErrorKind.NumberTooBig, propertyName, propertyPath, token, schema));
 
-                if (schema.MultipleOf.HasValue && value % schema.MultipleOf != 0)
-                    errors.Add(new ValidationError(ValidationErrorKind.NumberNotMultipleOf, propertyName, propertyPath, token, schema));
+                    if (schema.MultipleOf.HasValue && value % schema.MultipleOf != 0)
+                        errors.Add(new ValidationError(ValidationErrorKind.NumberNotMultipleOf, propertyName, propertyPath, token, schema));
+                }
+                catch (OverflowException)
+                {
+                    var value = token.Value<double>();
+
+                    if (schema.Minimum.HasValue && (schema.IsExclusiveMinimum ? value <= (double)schema.Minimum : value < (double)schema.Minimum))
+                        errors.Add(new ValidationError(ValidationErrorKind.NumberTooSmall, propertyName, propertyPath, token, schema));
+
+                    if (schema.Maximum.HasValue && (schema.IsExclusiveMaximum ? value >= (double)schema.Maximum : value > (double)schema.Maximum))
+                        errors.Add(new ValidationError(ValidationErrorKind.NumberTooBig, propertyName, propertyPath, token, schema));
+
+                    if (schema.MultipleOf.HasValue && value % (double)schema.MultipleOf != 0)
+                        errors.Add(new ValidationError(ValidationErrorKind.NumberNotMultipleOf, propertyName, propertyPath, token, schema));
+                }
             }
         }
 
@@ -368,7 +409,7 @@ namespace NJsonSchema.Validation
             }
         }
 
-        private void ValidateAdditionalProperties(JToken token, List<JProperty> additionalProperties, JsonSchema4 schema, 
+        private void ValidateAdditionalProperties(JToken token, List<JProperty> additionalProperties, JsonSchema4 schema,
             string propertyName, string propertyPath, List<ValidationError> errors)
         {
             if (schema.AdditionalPropertiesSchema != null)

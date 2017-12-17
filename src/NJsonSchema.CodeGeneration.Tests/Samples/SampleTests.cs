@@ -2,13 +2,12 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel.DataAnnotations;
 using System.Threading.Tasks;
-using Microsoft.VisualStudio.TestTools.UnitTesting;
 using Newtonsoft.Json.Linq;
 using NJsonSchema.CodeGeneration.TypeScript;
+using Xunit;
 
 namespace NJsonSchema.CodeGeneration.Tests.Samples
 {
-    [TestClass]
     public class SampleTests
     {
         public class Person
@@ -51,17 +50,28 @@ namespace NJsonSchema.CodeGeneration.Tests.Samples
             public string Name { get; set; }
         }
 
-        [TestMethod]
+        [Fact]
         public async Task Demo()
         {
             var schema = await JsonSchema4.FromTypeAsync<Person>();
             var schemaJsonData = schema.ToJson();
             var errors = schema.Validate("{}");
-            var generator = new TypeScriptGenerator(schema);
+            var generator = new TypeScriptGenerator(schema, new TypeScriptGeneratorSettings { TypeStyle = TypeScriptTypeStyle.Class, TypeScriptVersion = 2.0m });
             var code = generator.GenerateFile();
         }
 
-        [TestMethod]
+        [Fact]
+        public async Task Demo2()
+        {
+            var schema = await JsonSchema4.FromTypeAsync<Person>();
+            var schemaJsonData = schema.ToJson();
+            var errors = schema.Validate("{}");
+            var generator = new TypeScriptGenerator(schema, new TypeScriptGeneratorSettings { TypeStyle = TypeScriptTypeStyle.Interface, TypeScriptVersion = 2.0m });
+            var code = generator.GenerateFile();
+        }
+
+
+        [Fact]
         public async Task When_JSON_contains_DateTime_is_available_then_string_validator_validates_correctly()
         {
             //// Arrange
@@ -84,16 +94,16 @@ namespace NJsonSchema.CodeGeneration.Tests.Samples
             var dataJson = @"{
                 ""SimpleDate"":""2012-05-18T00:00:00Z"",
                 ""PatternDate"":""2012-11-07T00:00:00Z""
-            }"; 
+            }";
 
             //// Act
             var errors = schema.Validate(dataJson);
 
             //// Assert
-            Assert.AreEqual(0, errors.Count);
+            Assert.Equal(0, errors.Count);
         }
 
-        [TestMethod]
+        [Fact]
         public async Task When_JSON_contains_DateTime_is_available_then_JObject_validator_validates_correctly()
         {
             //// Arrange
@@ -124,7 +134,7 @@ namespace NJsonSchema.CodeGeneration.Tests.Samples
             var errors = schema.Validate(data);
 
             //// Assert
-            Assert.AreEqual(0, errors.Count);
+            Assert.Equal(0, errors.Count);
         }
     }
 }

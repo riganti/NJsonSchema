@@ -12,8 +12,10 @@ using NJsonSchema.CodeGeneration.Models;
 
 namespace NJsonSchema.CodeGeneration.CSharp.Models
 {
+    // TODO: Add base class for CSharp.EnumTemplateModel and TypeScript.EnumTemplateModel
+
     /// <summary>The CSharp enum template model.</summary>
-    public class EnumTemplateModel
+    public class EnumTemplateModel : TemplateModelBase
     {
         private readonly JsonSchema4 _schema;
         private readonly CSharpGeneratorSettings _settings;
@@ -26,7 +28,6 @@ namespace NJsonSchema.CodeGeneration.CSharp.Models
         {
             _schema = schema;
             _settings = settings;
-
             Name = typeName;
         }
 
@@ -42,29 +43,33 @@ namespace NJsonSchema.CodeGeneration.CSharp.Models
         /// <summary>Gets a value indicating whether the enum is of type string.</summary>
         public bool IsStringEnum => _schema.Type != JsonObjectType.Integer;
 
+        /// <summary>Gets or sets the access modifier of generated classes and interfaces.</summary>
+        public string TypeAccessModifier => _settings.TypeAccessModifier;
+
         /// <summary>Gets the enum values.</summary>
         public IEnumerable<EnumerationItemModel> Enums
         {
             get
             {
                 var entries = new List<EnumerationItemModel>();
-                for (int i = 0; i < _schema.Enumeration.Count; i++)
+                for (var i = 0; i < _schema.Enumeration.Count; i++)
                 {
                     var value = _schema.Enumeration.ElementAt(i);
-                    var name = _schema.EnumerationNames.Count > i ?
-                        _schema.EnumerationNames.ElementAt(i) :
-                        _schema.Type == JsonObjectType.Integer ? "_" + value : value.ToString();
-
                     if (value != null)
                     {
+                        var name = _schema.EnumerationNames.Count > i ?
+                            _schema.EnumerationNames.ElementAt(i) :
+                            _schema.Type.HasFlag(JsonObjectType.Integer) ? "_" + value : value.ToString();
+
                         entries.Add(new EnumerationItemModel
                         {
                             Name = _settings.EnumNameGenerator.Generate(i, name, value, _schema),
                             Value = value.ToString(),
-                            InternalValue = _schema.Type == JsonObjectType.Integer ? value.ToString() : i.ToString()
+                            InternalValue = _schema.Type.HasFlag(JsonObjectType.Integer) ? value.ToString() : i.ToString()
                         });
                     }
                 }
+
                 return entries;
             }
         }

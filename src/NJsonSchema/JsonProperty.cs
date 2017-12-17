@@ -9,13 +9,14 @@
 using System.ComponentModel;
 using System.Linq;
 using Newtonsoft.Json;
+using System;
 
 namespace NJsonSchema
 {
     /// <summary>A description of a JSON property of a JSON object. </summary>
     public class JsonProperty : JsonSchema4
     {
-        private JsonSchema4 _parentSchema;
+        private object _parent;
 
         internal static JsonProperty FromJsonSchema(string name, JsonSchema4 type)
         {
@@ -31,13 +32,13 @@ namespace NJsonSchema
 
         /// <summary>Gets the parent schema of this property schema. </summary>
         [JsonIgnore]
-        public override JsonSchema4 ParentSchema
+        public override object Parent
         {
-            get { return _parentSchema; }
-            internal set
+            get { return _parent; }
+            set
             {
-                var initialize = _parentSchema == null;
-                _parentSchema = value;
+                var initialize = _parent == null;
+                _parent = value;
 
                 if (initialize && InitialIsRequired)
                     IsRequired = InitialIsRequired;
@@ -80,30 +81,25 @@ namespace NJsonSchema
 
         /// <summary>Gets the property schema (either oneOf schema or the actual schema).</summary>
         [JsonIgnore]
-        public JsonSchema4 ActualPropertySchema
-        {
-            get
-            {
-                return OneOf.FirstOrDefault(o => !o.IsNullable(NullHandling.JsonSchema))?.ActualSchema ?? ActualSchema;
-            }
-        }
+        [Obsolete("Use ActualTypeSchema instead.")]
+        public JsonSchema4 ActualPropertySchema => ActualTypeSchema;
 
         /// <summary>Gets a value indicating whether the property is an inheritance discriminator.</summary>
         [JsonIgnore]
         public bool IsInheritanceDiscriminator => ParentSchema.Discriminator == Name;
 
         /// <summary>Determines whether the specified property null handling is nullable.</summary>
-        /// <param name="nullHandling">The property null handling.</param>
-        /// <returns></returns>
-        public override bool IsNullable(NullHandling nullHandling)
+        /// <param name="schemaType">The schema type.</param>
+        /// <returns>true if the type can be null.</returns>
+        public override bool IsNullable(SchemaType schemaType)
         {
             if (IsEnumeration && Enumeration.Contains(null))
                 return true;
 
-            if (nullHandling == NullHandling.Swagger)
+            if (schemaType == SchemaType.Swagger2)
                 return IsRequired == false;
 
-            return base.IsNullable(nullHandling);
+            return base.IsNullable(schemaType);
         }
     }
 }

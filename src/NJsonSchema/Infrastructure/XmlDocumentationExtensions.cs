@@ -11,6 +11,7 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
+using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
@@ -138,7 +139,7 @@ namespace NJsonSchema.Infrastructure
 
             var documentationPath = await GetXmlDocumentationPathAsync(member.Module.Assembly).ConfigureAwait(false);
             var element = await GetXmlDocumentationAsync(member, documentationPath).ConfigureAwait(false);
-            return RemoveLineBreakWhiteSpaces(element?.Element(tagName)?.Value);
+            return RemoveLineBreakWhiteSpaces(GetXmlDocumentationText(element?.Element(tagName)));
         }
 
         /// <summary>Returns the contents of the "returns" or "param" XML documentation tag for the specified parameter.</summary>
@@ -168,7 +169,7 @@ namespace NJsonSchema.Infrastructure
 
             var documentationPath = await GetXmlDocumentationPathAsync(parameter.Member.Module.Assembly).ConfigureAwait(false);
             var element = await GetXmlDocumentationAsync(parameter, documentationPath).ConfigureAwait(false);
-            return RemoveLineBreakWhiteSpaces(element?.Value);
+            return RemoveLineBreakWhiteSpaces(GetXmlDocumentationText(element));
         }
 
         /// <summary>Returns the contents of the "summary" XML documentation tag for the specified member.</summary>
@@ -322,6 +323,43 @@ namespace NJsonSchema.Infrastructure
             return null;
         }
 
+        /// <summary>Converts the given XML documentation <see cref="XElement"/> to text.</summary>
+        /// <param name="element">The XML element.</param>
+        /// <returns>The text</returns>
+        public static string GetXmlDocumentationText(this XElement element)
+        {
+            if (element != null)
+            {
+                var value = new StringBuilder();
+                foreach (var node in element.Nodes())
+                {
+                    if (node is XElement e)
+                    {
+                        if (e.Name == "see")
+                        {
+                            var attribute = e.Attribute("langword");
+                            if (attribute != null)
+                                value.Append(attribute.Value);
+                            else
+                            {
+                                attribute = e.Attribute("cref");
+                                if (attribute != null)
+                                    value.Append(attribute.Value.Trim('!', ':').Trim().Split('.').Last());
+                            }
+                        }
+                        else
+                            value.Append(e.Value);
+                    }
+                    else
+                        value.Append(node);
+                }
+
+                return value.ToString();
+            }
+
+            return null;
+        }
+
         private static XElement GetXmlDocumentation(this MemberInfo member, XDocument xml)
         {
             var name = GetMemberElementName(member);
@@ -420,11 +458,12 @@ namespace NJsonSchema.Infrastructure
                 if (string.IsNullOrEmpty(assemblyName.Name))
                     return null;
 
-                var path = DynamicApis.PathCombine(DynamicApis.PathGetDirectoryName(assembly.Location), assemblyName.Name + ".xml");
+                var assemblyDirectory = DynamicApis.PathGetDirectoryName((string)assembly.Location);
+                var path = DynamicApis.PathCombine(assemblyDirectory, (string)assemblyName.Name + ".xml");
                 if (await DynamicApis.FileExistsAsync(path).ConfigureAwait(false))
                     return path;
 
-                if (((object)assembly).GetType().GetRuntimeProperty("CodeBase") != null)
+                if (ReflectionExtensions.HasProperty(assembly, "CodeBase"))
                 {
                     path = DynamicApis.PathCombine(DynamicApis.PathGetDirectoryName(assembly.CodeBase
                         .Replace("file:///", string.Empty)), assemblyName.Name + ".xml")
@@ -434,12 +473,18 @@ namespace NJsonSchema.Infrastructure
                         return path;
                 }
 
-                dynamic currentDomain = Type.GetType("System.AppDomain").GetRuntimeProperty("CurrentDomain").GetValue(null);
-                path = DynamicApis.PathCombine(currentDomain.BaseDirectory, assemblyName.Name + ".xml");
-                if (await DynamicApis.FileExistsAsync(path).ConfigureAwait(false))
-                    return path;
+                var currentDomain = Type.GetType("System.AppDomain").GetRuntimeProperty("CurrentDomain").GetValue(null);
+                if (currentDomain.HasProperty("BaseDirectory"))
+                {
+                    var baseDirectory = currentDomain.TryGetPropertyValue("BaseDirectory", "");
+                    path = DynamicApis.PathCombine(baseDirectory, assemblyName.Name + ".xml");
+                    if (await DynamicApis.FileExistsAsync(path).ConfigureAwait(false))
+                        return path;
 
-                return DynamicApis.PathCombine(currentDomain.BaseDirectory, "bin\\" + assemblyName.Name + ".xml");
+                    return DynamicApis.PathCombine(baseDirectory, "bin\\" + assemblyName.Name + ".xml");
+                }
+
+                return null;
             }
             catch
             {

@@ -31,8 +31,8 @@ namespace NJsonSchema.Infrastructure
                 if (!PropertyCacheByType.ContainsKey(type))
                 {
 #if !LEGACY
-                    var declaredProperties = type.GetRuntimeProperties();
-                    var declaredFields = type.GetRuntimeFields().Where(f => f.IsPublic);
+                    var declaredProperties = type.GetRuntimeProperties().Where(p => p.GetMethod?.IsStatic != true);
+                    var declaredFields = type.GetRuntimeFields().Where(f => f.IsPublic && !f.IsStatic);
 #else
                     var declaredProperties = type.GetTypeInfo().GetProperties(BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public)
                         .Where(p => p.GetGetMethod(true)?.IsAssembly == true || p.GetGetMethod(true)?.IsPublic == true ||
@@ -117,7 +117,20 @@ namespace NJsonSchema.Infrastructure
             {
                 if (MemberInfo is PropertyInfo)
                     return ((PropertyInfo)MemberInfo).GetValue(obj);
-                return ((FieldInfo)MemberInfo).GetValue(obj);
+                else
+                    return ((FieldInfo)MemberInfo).GetValue(obj);
+            }
+
+            /// <summary>Gets the value of the property or field.</summary>
+            /// <param name="obj">The object.</param>
+            /// <param name="value">The value.</param>
+            /// <returns>The value.</returns>
+            public void SetValue(object obj, object value)
+            {
+                if (MemberInfo is PropertyInfo)
+                    ((PropertyInfo)MemberInfo).SetValue(obj, value);
+                else
+                    ((FieldInfo)MemberInfo).SetValue(obj, value);
             }
 
             /// <summary>Gets the name of the property for JSON serialization.</summary>
